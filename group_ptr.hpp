@@ -60,6 +60,7 @@ template <typename T>
 class group_ptr {
 public:
     group_ptr()
+        : member_(nullptr)
     {
     }
 
@@ -74,11 +75,13 @@ public:
     }
 
     group_ptr(group_ptr<T> const &other)
+        : member_(nullptr)
     {
         *this = other;
     }
 
     group_ptr(group_ptr<T> &&other)
+        : member_(nullptr)
     {
         member_ = other.member_;
         other.member_ = nullptr;
@@ -140,6 +143,13 @@ public:
     operator bool() const
     {
         return !!get();
+    }
+
+    operator group_ptr<T const>() const
+    {
+        group_ptr<T const> p;
+        p.reset(member_);
+        return p;
     }
  
     T *get() const
@@ -203,21 +213,25 @@ public:
     }
 
 private:
-    detail::member<T> *member_;
+    typedef typename std::remove_const<T>::type nonconst_type;
+
+    detail::member<nonconst_type> *member_;
 
     group_ptr(T *p, detail::group *group)
     {
-        std::shared_ptr<detail::member<T> > this_member(new detail::member<T>);
+        std::shared_ptr<detail::member<nonconst_type> > this_member(
+            new detail::member<nonconst_type>
+        );
         group->members.insert(this_member);
 
         member_ = this_member.get();
-        member_->p = p;
+        member_->p = const_cast<nonconst_type *>(p);
         member_->group = group;
         member_->refcount = 1;
         member_->group->refcount++;
     }
 
-    void reset(detail::member<T> *other_member)
+    void reset(detail::member<nonconst_type> *other_member)
     {
         if (other_member) {
             detail::group *const other_group = other_member->group;

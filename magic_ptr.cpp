@@ -55,6 +55,10 @@ int main(int argc, char **argv)
             }
             std::cout << "-scope" << std::endl;
         }
+
+        group_ptr<A> tmp1 = g1a;
+        group_ptr<A const> tmp2 = g1a;
+
         std::cout << "-scope" << std::endl;
     }
     std::cout << "-main" << std::endl;
