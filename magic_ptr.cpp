@@ -55,8 +55,12 @@ int main(int argc, char **argv)
             std::cout << "-scope" << std::endl;
         }
 
-        group_ptr<A> tmp1 = g1a;
-        group_ptr<A const> tmp2 = g1a;
+        group_weak_ptr<A> tmp1 = g1a;
+        group_weak_ptr<A const> tmp2 = tmp1;
+
+        group_ptr<A const> tmp2_lock = tmp2.lock();
+
+        //std::cout << "TESTING: " << tmp2.lock()->name_ << std::endl;
 
         std::cout << "-scope" << std::endl;
     }

@@ -149,9 +149,7 @@ public:
 
     operator group_ptr<T const>() const
     {
-        group_ptr<T const> p;
-        p.reset(member_);
-        return p;
+        return group_ptr<T const>(member_);
     }
  
     T *get() const
@@ -219,6 +217,13 @@ private:
 
     detail::member<nonconst_type> *member_;
 
+    group_ptr(detail::member<nonconst_type> *member)
+        : member_(member)
+    {
+        member_->refcount++;
+        member_->group->refcount++;
+    }
+
     group_ptr(T *p, detail::group *group)
     {
         std::shared_ptr<detail::member<nonconst_type> > this_member(
@@ -229,6 +234,7 @@ private:
         member_ = this_member.get();
         member_->p = const_cast<nonconst_type *>(p);
         member_->group = group;
+
         member_->refcount = 1;
         member_->group->refcount++;
     }
@@ -268,8 +274,13 @@ public:
     ~group_weak_ptr() = default;
 
     group_weak_ptr(group_ptr<T> const &other)
-        : member_(other->member_->shared_from_this())
+        : group_weak_ptr(other.member_->shared_from_this())
     {
+    }
+
+    operator group_weak_ptr<T const>() const
+    {
+        return group_weak_ptr<T const>(member_);
     }
 
     void reset()
@@ -289,11 +300,25 @@ public:
 
     group_ptr<T> lock() const
     {
-        return group_ptr<T>(member_);
+        auto member_ptr = member_.lock();
+        if (member_ptr) {
+            return group_ptr<T>(member_ptr.get());
+        } else { 
+            return group_ptr<T>();
+        }
     }
 
 private:
-    std::weak_ptr<detail::member<T> > member_;
+    typedef typename std::remove_const<T>::type nonconst_type;
+
+    std::weak_ptr<detail::member<nonconst_type> > member_;
+
+    group_weak_ptr(std::weak_ptr<detail::member<nonconst_type> > const &member)
+        : member_(member)
+    {
+    }
+
+    template <typename U> friend class group_weak_ptr;
 };
 
 
