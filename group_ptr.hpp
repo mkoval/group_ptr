@@ -33,7 +33,8 @@ struct member_base {
 };
 
 template <typename T>
-struct member : public member_base {
+struct member : public member_base,
+                std::enable_shared_from_this<member<T> > {
     member()
         : p(nullptr)
     {
@@ -80,7 +81,7 @@ public:
     group_ptr(group_ptr<T> &&other)
     {
         member_ = other.member_;
-        other.member_.reset();
+        other.member_ = nullptr;
     }
 
     group_ptr<T> &operator=(group_ptr<T> const &other)
@@ -92,98 +93,95 @@ public:
     group_ptr<T> &operator=(group_ptr<T> &&other)
     {
         member_ = other.member_;
-        other.member_.reset();
+        other.member_ = nullptr;
         return *this;
     }
 
     T &operator *() const
     {
-        return *p_;
+        return *get();
     }
 
     T *operator ->() const
     {
-        return p_;
+        return get();
     }
 
     bool operator ==(group_ptr<T> const &other) const
     {
-        return p_ == other.p_;
+        return get() == other.get();
     }
 
     bool operator !=(group_ptr<T> const &other) const
     {
-        return p_ != other.p_;
+        return get() != other.get();
     }
 
     bool operator <(group_ptr<T> const &other) const
     {
-        return p_ < other.p_;
+        return get() < other.get();
     }
 
     bool operator <=(group_ptr<T> const &other) const
     {
-        return p_ <= other.p_;
+        return get() <= other.get();
     }
 
     bool operator >(group_ptr<T> const &other) const
     {
-        return p_ > other.p_;
+        return get() > other.get();
     }
 
     bool operator >=(group_ptr<T> const &other) const
     {
-        return p_ >= other.p_;
+        return get() >= other.get();
     }
 
     operator bool() const
     {
-        return !!p_;
+        return !!get();
     }
  
     T *get() const
     {
-        return p_;
+        return member_->p;
     }
 
     void reset()
     {
-        reset(std::shared_ptr<detail::member<T> >());
+        reset(nullptr);
     }
 
     void reset(group_ptr<T> const &other)
     {
-        reset(other.member_.lock());
+        reset(other.member_);
     }
 
     template <typename U>
     void add_to_group(group_ptr<U> const &other)
     {
-        std::shared_ptr<detail::member<T> > const this_member = member_.lock();
-        std::shared_ptr<detail::member<U> > const other_member = other.member_.lock();
-        detail::group *const this_group = this_member->group;
-        detail::group *const other_group = other_member->group;
+        auto other_member_shared = other.member_->shared_from_this();
+        detail::group *const this_group = member_->group;
+        detail::group *const other_group = other.member_->group;
 
-        other_group->refcount -= other_member->refcount;
-        other_group->members.erase(other_member);
+        other_group->refcount -= other.member_->refcount;
+        other_group->members.erase(other_member_shared);
 
         if (other_group->refcount == 0) {
             delete other_group;
         }
 
-        other_member->group = this_member->group;
+        other.member_->group = member_->group;
 
-        this_group->refcount += other_member->refcount;
-        this_group->members.insert(other_member);
+        this_group->refcount += other.member_->refcount;
+        this_group->members.insert(other_member_shared);
     }
 
     template <typename U>
     void merge_group(group_ptr<U> const &other)
     {
-        std::shared_ptr<detail::member<T> > const this_member = member_.lock();
-        std::shared_ptr<detail::member<U> > const other_member = other.member_.lock();
-        detail::group *const this_group = this_member->group;
-        detail::group *const other_group = other_member->group;
+        detail::group *const this_group = member_->group;
+        detail::group *const other_group = other.member_->group;
 
         this_group->refcount += other_group->refcount;
 
@@ -193,33 +191,29 @@ public:
         );
 
         for (auto const &member : other_group->members) {
-            member->group = this_member->group;
+            member->group = member_->group;
         }
 
         delete other_group;
     }
 
 private:
-    T *p_;
-    std::weak_ptr<detail::member<T> > member_;
+    detail::member<T> *member_;
 
     group_ptr(T *p, detail::group *group)
     {
         std::shared_ptr<detail::member<T> > this_member(new detail::member<T>);
-
-        this_member->p = p;
-        this_member->group = group;
-        this_member->refcount = 1;
-        this_member->group->refcount++;
-
         group->members.insert(this_member);
-        member_ = this_member;
+
+        member_ = this_member.get();
+        member_->p = p;
+        member_->group = group;
+        member_->refcount = 1;
+        member_->group->refcount++;
     }
 
-    void reset(std::shared_ptr<detail::member<T> > const &other_member)
+    void reset(detail::member<T> *other_member)
     {
-        std::shared_ptr<detail::member<T> > const this_member = member_.lock();
-
         if (other_member) {
             detail::group *const other_group = other_member->group;
 
@@ -227,10 +221,10 @@ private:
             other_group->refcount++;
         }
 
-        if (this_member) {
-            detail::group *const this_group = this_member->group;
+        if (member_) {
+            detail::group *const this_group = member_->group;
 
-            this_member->refcount--;
+            member_->refcount--;
             this_group->refcount--;
 
             if (this_group->refcount == 0) {
@@ -250,7 +244,7 @@ template <typename T>
 class group_weak_ptr {
 public:
     group_weak_ptr(group_ptr<T> const &other)
-        : member_(other.member_)
+        : member_(other->member_->shared_from_this())
     {
     }
 
