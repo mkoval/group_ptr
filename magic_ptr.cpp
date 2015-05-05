@@ -15,12 +15,10 @@ struct group {
     group()
         : refcount(0)
     {
-        std::cout << "\t+group<" << this << ">" << std::endl;
     }
 
     ~group()
     {
-        std::cout << "\t-group<" << this << ">" << std::endl;
     }
 
     int refcount;
@@ -45,7 +43,6 @@ struct member : public member_base {
     member()
         : p(nullptr)
     {
-        std::cout << "\t+member<" << this << ">" << std::endl;
     }
 
     virtual ~member()
@@ -53,7 +50,6 @@ struct member : public member_base {
         if (p) {
             delete p;
         }
-        std::cout << "\t-member<" << this << ">" << std::endl;
     }
 
     T *p;
@@ -64,18 +60,15 @@ class group_ptr {
 public:
     group_ptr()
     {
-        std::cout << "\tgroup_ptr<" << this << ">()" << std::endl;
     }
 
     ~group_ptr()
     {
-        std::cout << "\t~group_ptr<" << this << ">" << std::endl;
         reset();
     }
 
     group_ptr(group_ptr<T> const &other)
     {
-        std::cout << "\tgroup_ptr<" << this << ">(" << &other << ")" << std::endl;
         *this = other;
     }
 
@@ -87,7 +80,6 @@ public:
 
     group_ptr<T> &operator=(group_ptr<T> const &other)
     {
-        std::cout << "\tgroup_ptr<" << this << ">::operator=(" << &other << ")" << std::endl;
         reset(other.member_);
         return *this;
     }
