@@ -147,6 +147,11 @@ public:
         return member_->p;
     }
 
+    void swap(group_ptr<T> &other)
+    {
+        std::swap(member_, other.member_);
+    }
+
     void reset()
     {
         reset(nullptr);
@@ -281,6 +286,12 @@ struct hash<group_ptr<T> >
         return std::hash<T *>()(p.get());
     }
 };
+
+template <typename T>
+void swap(group_ptr<T> &lhs, group_ptr<T> &rhs)
+{
+    lhs.swap(rhs);
+}
 
 }
 
