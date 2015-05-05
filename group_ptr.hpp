@@ -3,9 +3,7 @@
 
 namespace detail {
 
-class group;
 class member_base;
-template <typename T> class member;
 
 struct group {
     group()
@@ -55,13 +53,17 @@ struct member : public member_base {
 
 template <typename T> class group_ptr;
 template <typename T> class group_weak_ptr;
-template <typename T>
-group_ptr<T> make_group_ptr(T *p);
+template <typename T> group_ptr<T> make_group_ptr(T *p);
 
 template <typename T>
 class group_ptr {
 public:
     group_ptr()
+    {
+    }
+
+    group_ptr(T *p)
+        : group_ptr(p, new detail::group)
     {
     }
 
@@ -96,12 +98,52 @@ public:
 
     T &operator *() const
     {
-        return *member_.lock()->p;
+        return *p_;
     }
 
     T *operator ->() const
     {
-        return member_.lock()->p;
+        return p_;
+    }
+
+    bool operator ==(group_ptr<T> const &other) const
+    {
+        return p_ == other.p_;
+    }
+
+    bool operator !=(group_ptr<T> const &other) const
+    {
+        return p_ != other.p_;
+    }
+
+    bool operator <(group_ptr<T> const &other) const
+    {
+        return p_ < other.p_;
+    }
+
+    bool operator <=(group_ptr<T> const &other) const
+    {
+        return p_ <= other.p_;
+    }
+
+    bool operator >(group_ptr<T> const &other) const
+    {
+        return p_ > other.p_;
+    }
+
+    bool operator >=(group_ptr<T> const &other) const
+    {
+        return p_ >= other.p_;
+    }
+
+    operator bool() const
+    {
+        return !!p_;
+    }
+ 
+    T *get() const
+    {
+        return p_;
     }
 
     void reset()
@@ -158,6 +200,7 @@ public:
     }
 
 private:
+    T *p_;
     std::weak_ptr<detail::member<T> > member_;
 
     group_ptr(T *p, detail::group *group)
@@ -221,10 +264,30 @@ private:
 };
 
 
-template <typename T>
-group_ptr<T> make_group_ptr(T *p)
+template <typename T, typename... Args>
+group_ptr<T> make_group_ptr(Args&&... args)
 {
-    return group_ptr<T>(p, new detail::group);
+    return group_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
+template <typename T>
+std::ostream &operator <<(std::ostream &stream, group_ptr<T> const &p)
+{
+    stream << p.get();
+    return stream;
+}
+
+namespace std {
+
+template <typename T>
+struct hash<group_ptr<T> >
+{
+    std::size_t operator ()(group_ptr<T> const &p) const
+    {
+        return std::hash<T *>()(p.get());
+    }
+};
+
 }
 
 #endif
