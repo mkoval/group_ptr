@@ -101,6 +101,16 @@ public:
         return member_.lock()->p;
     }
 
+    void reset()
+    {
+        reset(std::shared_ptr<member<T> >());
+    }
+
+    void reset(group_ptr<T> const &other)
+    {
+        reset(other.member_.lock());
+    }
+
     void add_to_group(group_ptr<T> const &other)
     {
         std::shared_ptr<member<T> > const this_member = member_.lock();
@@ -158,17 +168,20 @@ private:
         member_ = this_member;
     }
 
-    void reset()
-    {
-        reset(std::weak_ptr<member<T> >());
-    }
-
-    void reset(std::weak_ptr<member<T> > const &other_member)
+    void reset(std::shared_ptr<member<T> > const &other_member)
     {
         std::shared_ptr<member<T> > const this_member = member_.lock();
-        group<T> *const this_group = this_member->group;
+
+        if (other_member) {
+            group<T> *const other_group = other_member->group;
+
+            other_member->refcount++;
+            other_group->refcount++;
+        }
 
         if (this_member) {
+            group<T> *const this_group = this_member->group;
+
             this_member->refcount--;
             this_group->refcount--;
 
@@ -178,12 +191,6 @@ private:
         }
 
         member_ = other_member;
-
-        std::shared_ptr<member<T> > const new_member = member_.lock();
-        if (new_member) {
-            new_member->refcount++;
-            new_member->group->refcount++;
-        }
     }
 
     friend class group_weak_ptr<T>;
@@ -240,12 +247,19 @@ int main(int argc, char **argv)
         std::cout << "+scope" << std::endl;
         {
             auto g1b = make_group_ptr<A>(new A("G1b"));
+            auto g1c = make_group_ptr<A>(new A("G1c"));
             g1a.add_to_group(g1b);
+            g1a.add_to_group(g1c);
+            g1c.reset(g1b);
 
-            auto g2a = make_group_ptr<A>(new A("G2a"));
-            auto g2b = make_group_ptr<A>(new A("G2b"));
-            g2a.add_to_group(g2b);
-            g1a.merge_group(g2a);
+            std::cout << "+scope" << std::endl;
+            {
+                auto g2a = make_group_ptr<A>(new A("G2a"));
+                auto g2b = make_group_ptr<A>(new A("G2b"));
+                g2a.add_to_group(g2b);
+                g1a.merge_group(g2a);
+            }
+            std::cout << "-scope" << std::endl;
         }
         std::cout << "-scope" << std::endl;
     }
