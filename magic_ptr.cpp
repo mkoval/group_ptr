@@ -4,6 +4,7 @@
 // Reference Implementation
 
 class group;
+class member_base;
 template <typename T> class member;
 template <typename T> class group_ptr;
 template <typename T> class group_weak_ptr;
@@ -23,20 +24,31 @@ struct group {
     }
 
     int refcount;
-    std::unordered_set<std::shared_ptr<void> > members;
+    std::unordered_set<std::shared_ptr<member_base> > members;
+};
+
+struct member_base {
+    member_base()
+        : group(nullptr)
+        , refcount(0)
+    {
+    }
+
+    virtual ~member_base() = default;
+
+    group *group;
+    int refcount;
 };
 
 template <typename T>
-struct member {
+struct member : public member_base {
     member()
         : p(nullptr)
-        , group(nullptr)
-        , refcount(0)
     {
         std::cout << "\t+member<" << this << ">" << std::endl;
     }
 
-    ~member()
+    virtual ~member()
     {
         if (p) {
             delete p;
@@ -44,10 +56,7 @@ struct member {
         std::cout << "\t-member<" << this << ">" << std::endl;
     }
 
-
     T *p;
-    group *group;
-    int refcount;
 };
 
 template <typename T>
@@ -131,11 +140,11 @@ public:
         this_group->members.insert(other_member);
     }
 
-#if 0
-    void merge_group(group_ptr<T> const &other)
+    template <typename U>
+    void merge_group(group_ptr<U> const &other)
     {
         std::shared_ptr<member<T> > const this_member = member_.lock();
-        std::shared_ptr<member<T> > const other_member = other.member_.lock();
+        std::shared_ptr<member<U> > const other_member = other.member_.lock();
         group *const this_group = this_member->group;
         group *const other_group = other_member->group;
 
@@ -146,13 +155,12 @@ public:
             std::end(other_group->members)
         );
 
-        for (std::shared_ptr<void> const &member : other_group->members) {
+        for (auto const &member : other_group->members) {
             member->group = this_member->group;
         }
 
         delete other_group;
     }
-#endif
 
 private:
     std::weak_ptr<member<T> > member_;
@@ -274,9 +282,8 @@ int main(int argc, char **argv)
             {
                 auto g2a = make_group_ptr<>(new B("G2a"));
                 auto g2b = make_group_ptr<>(new B("G2b"));
-                g1a.add_to_group<>(g2a);
-                g1a.add_to_group<>(g2b);
-                //g1a.merge_group<B>(g2a);
+                g2a.add_to_group<>(g2b);
+                g1a.merge_group<B>(g2a);
             }
             std::cout << "-scope" << std::endl;
         }
