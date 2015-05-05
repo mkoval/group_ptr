@@ -6,6 +6,7 @@
 template <typename T> class group;
 template <typename T> class member;
 template <typename T> class group_ptr;
+template <typename T> class group_weak_ptr;
 template <typename T>
 group_ptr<T> make_group_ptr(T *p);
 
@@ -23,7 +24,7 @@ struct group {
     }
 
     int refcount;
-    std::unordered_set<member<T> *> members;
+    std::unordered_set<std::shared_ptr<member<T> > > members;
 };
 
 template <typename T>
@@ -38,6 +39,9 @@ struct member {
 
     ~member()
     {
+        if (p) {
+            delete p;
+        }
         std::cout << "\t-member<" << this << ">" << std::endl;
     }
 
@@ -51,7 +55,6 @@ template <typename T>
 class group_ptr {
 public:
     group_ptr()
-        : member_(nullptr)
     {
         std::cout << "\tgroup_ptr<" << this << ">()" << std::endl;
     }
@@ -63,17 +66,15 @@ public:
     }
 
     group_ptr(group_ptr<T> const &other)
-        : member_(nullptr)
     {
         std::cout << "\tgroup_ptr<" << this << ">(" << &other << ")" << std::endl;
         *this = other;
     }
 
     group_ptr(group_ptr<T> &&other)
-        : member_(nullptr)
     {
         member_ = other.member_;
-        other.member_ = nullptr;
+        other.member_.reset();
     }
 
     group_ptr<T> &operator=(group_ptr<T> const &other)
@@ -86,102 +87,126 @@ public:
     group_ptr<T> &operator=(group_ptr<T> &&other)
     {
         member_ = other.member_;
-        other.member_ = nullptr;
+        other.member_.reset();
         return *this;
     }
 
     T &operator *() const
     {
-        return *member_->p;
+        return *member_.lock()->p;
     }
 
     T *operator ->() const
     {
-        return member_->p;
+        return member_.lock()->p;
     }
 
     void add_to_group(group_ptr<T> const &other)
     {
-        other.member_->group->refcount -= other.member_->refcount;
-        other.member_->group->members.erase(other.member_);
+        std::shared_ptr<member<T> > const this_member = member_.lock();
+        std::shared_ptr<member<T> > const other_member = other.member_.lock();
+        group<T> *const this_group = this_member->group;
+        group<T> *const other_group = other_member->group;
 
-        if (other.member_->group->refcount == 0) {
-            delete other.member_->group;
+        other_group->refcount -= other_member->refcount;
+        other_group->members.erase(other_member);
+
+        if (other_group->refcount == 0) {
+            delete other_group;
         }
 
-        other.member_->group = member_->group;
+        other_member->group = this_member->group;
 
-        member_->group->refcount += other.member_->refcount;
-        member_->group->members.insert(other.member_);
+        this_group->refcount += other_member->refcount;
+        this_group->members.insert(other_member);
     }
 
     void merge_group(group_ptr<T> const &other)
     {
-        group<T> *const other_group = other.member_->group;
+        std::shared_ptr<member<T> > const this_member = member_.lock();
+        std::shared_ptr<member<T> > const other_member = other.member_.lock();
+        group<T> *const this_group = this_member->group;
+        group<T> *const other_group = other_member->group;
 
-        member_->group->refcount += other_group->refcount;
+        this_group->refcount += other_group->refcount;
 
-        member_->group->members.insert(
+        this_group->members.insert(
             std::begin(other_group->members),
             std::end(other_group->members)
         );
 
-        for (member<T> *const member : other_group->members) {
-            member->group = member_->group;
+        for (std::shared_ptr<member<T> > const &member : other_group->members) {
+            member->group = this_member->group;
         }
 
         delete other_group;
     }
 
 private:
-    member<T> *member_;
+    std::weak_ptr<member<T> > member_;
 
     group_ptr(T *p, group<T> *group)
-        : member_(new member<T>)
     {
-        std::cout << "\tgroup_ptr<" << this << ">(" << p << ", " << group << ")"
-                  << " member = " << member_ << std::endl;
+        std::shared_ptr<member<T> > this_member(new member<T>);
 
-        member_->p = p;
-        member_->group = group;
-        member_->refcount = 1;
-        member_->group->refcount++;
+        this_member->p = p;
+        this_member->group = group;
+        this_member->refcount = 1;
+        this_member->group->refcount++;
 
-        group->members.insert(member_);
+        group->members.insert(this_member);
+        member_ = this_member;
     }
 
-    void reset(member<T> *new_member = nullptr)
+    void reset()
     {
-        std::cout << "\t\tif (member_ = " << member_ << ")" << std::endl;
-        if (member_) {
-            std::cout << "\t\tmember->refcount = " << member_->refcount << std::endl;
-            --(member_->refcount);
-            std::cout << "\t\tmember->group->refcount = " << member_->group->refcount << std::endl;
-            --(member_->group->refcount);
+        reset(std::weak_ptr<member<T> >());
+    }
 
-            if (member_->group->refcount == 0) {
-                group<T> *const group = member_->group;
+    void reset(std::weak_ptr<member<T> > const &other_member)
+    {
+        std::shared_ptr<member<T> > const this_member = member_.lock();
+        group<T> *const this_group = this_member->group;
 
-                for (member<T> *member : group->members) {
-                    delete member->p;
-                    delete member;
-                }
+        if (this_member) {
+            this_member->refcount--;
+            this_group->refcount--;
 
-                delete group;
+            if (this_group->refcount == 0) {
+                delete this_group;
             }
         }
 
-        std::cout << "\t\tmember_ = " << new_member << std::endl;
-        member_ = new_member;
+        member_ = other_member;
 
-        if (member_) {
-            ++(member_->refcount);
-            ++(member_->group->refcount);
+        std::shared_ptr<member<T> > const new_member = member_.lock();
+        if (new_member) {
+            new_member->refcount++;
+            new_member->group->refcount++;
         }
     }
 
+    friend class group_weak_ptr<T>;
     friend group_ptr<T> make_group_ptr<>(T *p);
 };
+
+template <typename T>
+class group_weak_ptr {
+public:
+    group_weak_ptr(group_ptr<T> const &other)
+        : member_(other.member_)
+    {
+    }
+
+    group_ptr<T> lock() const
+    {
+        return group_ptr<T>(member_);
+    }
+
+private:
+    std::weak_ptr<member<T> > member_;
+};
+
 
 template <typename T>
 group_ptr<T> make_group_ptr(T *p)
