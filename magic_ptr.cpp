@@ -1,6 +1,5 @@
-#include <iostream>
-#include <unordered_set>
 #include "group_ptr.hpp"
+#include <iostream>
 
 struct A {
     A(std::string const &name)

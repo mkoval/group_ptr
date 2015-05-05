@@ -1,5 +1,7 @@
 #ifndef GROUP_PTR_HPP_
 #define GROUP_PTR_HPP_
+#include <memory>
+#include <unordered_set>
 
 namespace detail {
 
@@ -262,9 +264,27 @@ private:
 template <typename T>
 class group_weak_ptr {
 public:
+    group_weak_ptr() = default;
+    ~group_weak_ptr() = default;
+
     group_weak_ptr(group_ptr<T> const &other)
         : member_(other->member_->shared_from_this())
     {
+    }
+
+    void reset()
+    {
+        member_.reset();
+    }
+
+    void swap(group_weak_ptr<T> &other)
+    {
+        member_.swap(other.member_);
+    }
+
+    bool expired() const
+    {
+        return member_.expired();
     }
 
     group_ptr<T> lock() const
@@ -303,6 +323,12 @@ struct hash<group_ptr<T> >
 
 template <typename T>
 void swap(group_ptr<T> &lhs, group_ptr<T> &rhs)
+{
+    lhs.swap(rhs);
+}
+
+template <typename T>
+void swap(group_weak_ptr<T> &lhs, group_weak_ptr<T> &rhs)
 {
     lhs.swap(rhs);
 }
