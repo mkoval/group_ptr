@@ -3,14 +3,13 @@
 
 // Reference Implementation
 
-template <typename T> class group;
+class group;
 template <typename T> class member;
 template <typename T> class group_ptr;
 template <typename T> class group_weak_ptr;
 template <typename T>
 group_ptr<T> make_group_ptr(T *p);
 
-template <typename T>
 struct group {
     group()
         : refcount(0)
@@ -24,7 +23,7 @@ struct group {
     }
 
     int refcount;
-    std::unordered_set<std::shared_ptr<member<T> > > members;
+    std::unordered_set<std::shared_ptr<void> > members;
 };
 
 template <typename T>
@@ -47,7 +46,7 @@ struct member {
 
 
     T *p;
-    group<T> *group;
+    group *group;
     int refcount;
 };
 
@@ -111,12 +110,13 @@ public:
         reset(other.member_.lock());
     }
 
-    void add_to_group(group_ptr<T> const &other)
+    template <typename U>
+    void add_to_group(group_ptr<U> const &other)
     {
         std::shared_ptr<member<T> > const this_member = member_.lock();
-        std::shared_ptr<member<T> > const other_member = other.member_.lock();
-        group<T> *const this_group = this_member->group;
-        group<T> *const other_group = other_member->group;
+        std::shared_ptr<member<U> > const other_member = other.member_.lock();
+        group *const this_group = this_member->group;
+        group *const other_group = other_member->group;
 
         other_group->refcount -= other_member->refcount;
         other_group->members.erase(other_member);
@@ -131,12 +131,13 @@ public:
         this_group->members.insert(other_member);
     }
 
+#if 0
     void merge_group(group_ptr<T> const &other)
     {
         std::shared_ptr<member<T> > const this_member = member_.lock();
         std::shared_ptr<member<T> > const other_member = other.member_.lock();
-        group<T> *const this_group = this_member->group;
-        group<T> *const other_group = other_member->group;
+        group *const this_group = this_member->group;
+        group *const other_group = other_member->group;
 
         this_group->refcount += other_group->refcount;
 
@@ -145,17 +146,18 @@ public:
             std::end(other_group->members)
         );
 
-        for (std::shared_ptr<member<T> > const &member : other_group->members) {
+        for (std::shared_ptr<void> const &member : other_group->members) {
             member->group = this_member->group;
         }
 
         delete other_group;
     }
+#endif
 
 private:
     std::weak_ptr<member<T> > member_;
 
-    group_ptr(T *p, group<T> *group)
+    group_ptr(T *p, group *group)
     {
         std::shared_ptr<member<T> > this_member(new member<T>);
 
@@ -173,14 +175,14 @@ private:
         std::shared_ptr<member<T> > const this_member = member_.lock();
 
         if (other_member) {
-            group<T> *const other_group = other_member->group;
+            group *const other_group = other_member->group;
 
             other_member->refcount++;
             other_group->refcount++;
         }
 
         if (this_member) {
-            group<T> *const this_group = this_member->group;
+            group *const this_group = this_member->group;
 
             this_member->refcount--;
             this_group->refcount--;
@@ -193,6 +195,7 @@ private:
         member_ = other_member;
     }
 
+    template <typename U> friend class group_ptr;
     friend class group_weak_ptr<T>;
     friend group_ptr<T> make_group_ptr<>(T *p);
 };
@@ -218,7 +221,7 @@ private:
 template <typename T>
 group_ptr<T> make_group_ptr(T *p)
 {
-    return group_ptr<T>(p, new group<T>);
+    return group_ptr<T>(p, new group);
 }
 
 // Example
@@ -238,26 +241,42 @@ struct A {
     std::string name_;
 };
 
+struct B {
+    B(std::string const &name)
+        : name_(name)
+    {
+        std::cout << "+B(" << name_ << ")" << std::endl;
+    }
+
+    ~B()
+    {
+        std::cout << "-B(" << name_ << ")" << std::endl;
+    }
+
+    std::string name_;
+};
+
 int main(int argc, char **argv)
 {
     std::cout << "+main" << std::endl;
     {
-        auto g1a = make_group_ptr<A>(new A("G1a"));
+        auto g1a = make_group_ptr<>(new A("G1a"));
 
         std::cout << "+scope" << std::endl;
         {
-            auto g1b = make_group_ptr<A>(new A("G1b"));
-            auto g1c = make_group_ptr<A>(new A("G1c"));
+            auto g1b = make_group_ptr<>(new A("G1b"));
+            auto g1c = make_group_ptr<>(new A("G1c"));
             g1a.add_to_group(g1b);
             g1a.add_to_group(g1c);
             g1c.reset(g1b);
 
             std::cout << "+scope" << std::endl;
             {
-                auto g2a = make_group_ptr<A>(new A("G2a"));
-                auto g2b = make_group_ptr<A>(new A("G2b"));
-                g2a.add_to_group(g2b);
-                g1a.merge_group(g2a);
+                auto g2a = make_group_ptr<>(new B("G2a"));
+                auto g2b = make_group_ptr<>(new B("G2b"));
+                g1a.add_to_group<>(g2a);
+                g1a.add_to_group<>(g2b);
+                //g1a.merge_group<B>(g2a);
             }
             std::cout << "-scope" << std::endl;
         }
